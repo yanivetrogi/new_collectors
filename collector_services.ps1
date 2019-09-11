@@ -86,5 +86,5 @@ foreach ($_server in $servers)
         }
     }
 }
-exit
+
 
