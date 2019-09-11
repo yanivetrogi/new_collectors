@@ -8,12 +8,14 @@ $config_file = Get-Content  $config_file_full_name | Out-String| ConvertFrom-Jso
 
 
 [bool]$user_interactive = [Environment]::UserInteractive;
-[int]$threshold = $config_file.threshold;
+[int]$threshold = $config_file.threshold_disk_free_space_percent;
 [string[]]$servers = $config_file.servers;
 [array]$array = @();
 [string]$collector_name = $MyInvocation.MyCommand.Name.Split(".")[0];
 [string]$slack_token = $config_file.slack_token;
 #endregion
+
+
 
 #region <email>
 [string]$use_default_credentials = $config_file.use_default_credentials;
@@ -31,15 +33,17 @@ if($use_default_credentials -eq $true)
 [string]$from              = $config_file.from;
 [string]$smtp_server       = $config_file.smtp_server;
 
-[Net.Mail.SmtpClient]$smtp = New-Object Net.Mail.SmtpClient($smtp_server);
+[Net.Mail.SmtpClient]$smtp_client = New-Object Net.Mail.SmtpClient($smtp_server);
 if($use_default_credentials -eq $true)
 {
-    [object]$smtp.Credentials  = $credential;
+    [object]$smtp_client.Credentials  = $credential;
 }
-[int32]$smtp.Port          = $config_file.port;
-[bool]$smtp.EnableSsl      = $config_file.ssl;
+[int32]$smtp_client.Port          = $config_file.port;
+[bool]$smtp_client.EnableSsl      = $config_file.ssl;
 [string]$subject;
 #endregion
+
+
 
 
 
@@ -65,7 +69,7 @@ foreach ($_server in $servers)
             # if we cross the threshold send mail
             if ($percent_free -lt $threshold) 
             {           
-                $message = "Drive " + $drive + " Size mb: " + $size_mb + " Free Space mb: " + $free_space_mb + " Percent Free: " + $percent_free;            
+                $message = "Drive " + $drive + " Size mb: " + $size_mb + " Free Space mb: " + $free_space_mb + " Percent Free: " + $percent_free + " crossed the predefined threshold: " + $threshold;            
                 $array += [Environment]::NewLine + $message;   
             }        
             
@@ -76,7 +80,7 @@ foreach ($_server in $servers)
             $body = $array;
             $subject = $_server + ": " + $collector_name;
             if ($user_interactive -eq $true) {Write-Host -ForegroundColor Yellow "Sending mail.." };
-            $smtp.Send($from, $to, $subject, $body);
+            $smtp_client.Send($from, $to, $subject, $body);
         }
 
         if ($user_interactive -eq $true) {Write-Host $array };    
@@ -88,7 +92,7 @@ foreach ($_server in $servers)
             
         $subject = $_server + ': Exception at ' + $collector_name;
         $body = $exception;                      
-        $smtp.Send($from, $to, $subject, $body);   
+        $smtp_client.Send($from, $to, $subject, $body);   
     }
 
 }

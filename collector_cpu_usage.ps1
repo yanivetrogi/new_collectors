@@ -22,14 +22,13 @@
 $config_file_full_name = Join-Path $PSScriptRoot 'config.json';
 $config_file = Get-Content  $config_file_full_name | Out-String| ConvertFrom-Json;
 
-[int]$threshold_cpu_usage_percent = $config_file.threshold_cpu_usage_percent;
+[int]$threshold = $config_file.threshold_cpu_usage_percent;
 [string[]]$servers = $config_file.servers;
-#[string]$path = $PSScriptRoot;
 [string]$file_full_name;
 [int16]$counter;
 [int16]$num_times_crossed_threshold;
 [int16]$num_samples = 4;
-[bool]$send_mail = $true;
+[bool]$send_mail = $false;
 [bool]$user_interactive = [Environment]::UserInteractive;
 [string]$collector_name = $MyInvocation.MyCommand.Name.Split(".")[0];
 #endregion
@@ -52,13 +51,13 @@ if($use_default_credentials -eq $true)
 [string]$from              = $config_file.from;
 [string]$smtp_server       = $config_file.smtp_server;
 
-[Net.Mail.SmtpClient]$smtp = New-Object Net.Mail.SmtpClient($smtp_server);
+[Net.Mail.SmtpClient]$smtp_client = New-Object Net.Mail.SmtpClient($smtp_server);
 if($use_default_credentials -eq $true)
 {
-    [object]$smtp.Credentials  = $credential;
+    [object]$smtp_client.Credentials  = $credential;
 }
-[int32]$smtp.Port          = $config_file.port;
-[bool]$smtp.EnableSsl      = $config_file.ssl;
+[int32]$smtp_client.Port          = $config_file.port;
+[bool]$smtp_client.EnableSsl      = $config_file.ssl;
 [string]$subject;
 #endregion
 
@@ -94,14 +93,14 @@ foreach($_server in $servers)
         {   
             # Loop over the filoe values while excluding the last value         
             [int]$file_value_rounded = $file_value.CookedValue;
-            if ($file_value_rounded -gt $threshold_cpu_usage_percent) 
+            if ($file_value_rounded -gt $threshold) 
             {                    
                 $num_times_crossed_threshold +=1;                         
             }                         
             
 
             # Add current value as the first element
-            # Add the first line in the file as the second element
+            # Add the first line of the file that we have read as the second element in the psobject
             if($counter -eq 1)
             {
                 $psobject = New-Object PSObject -Property @{CookedValue = $current_value.CookedValue;}
@@ -140,16 +139,16 @@ foreach($_server in $servers)
         $array_list | Export-Csv $file_full_name -Force;
 
 
-        # Sen mail if the threshold has been crossed in the last xx checks
+        # Send mail if the threshold has been crossed in the last xx checks
         if ($send_mail -eq $true)
         {
             if ($num_times_crossed_threshold -ge $num_samples-1)
             {
                 $subject = $_server + ": " + $collector_name;
-                $body = '''Processor(_Total)\% Processor'' Time has crossed the predefined threshold ''' + $threshold_cpu_usage_percent + ''' for ''' + $num_samples + ''' consecutive checks';
+                $body = '''Processor(_Total)\% Processor'' Time has crossed the predefined threshold ''' + $threshold + ''' for ''' + $num_samples + ''' consecutive checks';
 
                 if ($user_interactive -eq $true) {Write-Host -ForegroundColor Cyan $_server 'Sending mail...' }; 
-                $smtp.Send($from, $to, $subject, $body);
+                $smtp_client.Send($from, $to, $subject, $body);
             }
         }
     }
@@ -160,7 +159,7 @@ foreach($_server in $servers)
             
         $subject = $_server + ': Exception at ' + $collector_name;
         $body = $exception;                      
-        $smtp.Send($from, $to, $subject, $body);   
+        $smtp_client.Send($from, $to, $subject, $body);   
     }
     
 }

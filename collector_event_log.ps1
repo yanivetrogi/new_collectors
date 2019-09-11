@@ -21,6 +21,7 @@ $eventlog_system_ids_exclude = $config_file.eventlog_system_ids_exclude;
 #endregion
 
 
+
 #region <email>
 [string]$use_default_credentials = $config_file.use_default_credentials;
 
@@ -37,15 +38,17 @@ if($use_default_credentials -eq $true)
 [string]$from              = $config_file.from;
 [string]$smtp_server       = $config_file.smtp_server;
 
-[Net.Mail.SmtpClient]$smtp = New-Object Net.Mail.SmtpClient($smtp_server);
+[Net.Mail.SmtpClient]$smtp_client = New-Object Net.Mail.SmtpClient($smtp_server);
 if($use_default_credentials -eq $true)
 {
-    [object]$smtp.Credentials  = $credential;
+    [object]$smtp_client.Credentials  = $credential;
 }
-[int32]$smtp.Port          = $config_file.port;
-[bool]$smtp.EnableSsl      = $config_file.ssl;
+[int32]$smtp_client.Port          = $config_file.port;
+[bool]$smtp_client.EnableSsl      = $config_file.ssl;
 [string]$subject;
 #endregion
+
+
 
 
 
@@ -64,7 +67,7 @@ foreach ($_server in $servers)
             $body = $events | format-list -property * | out-string;
             $subject = $_server + ': ' + $collector_name + $log_name;   
             if ($user_interactive -eq $true) {Write-Host -ForegroundColor Yellow $_server 'sending mail...'};     
-            $smtp.Send($from, $to, $subject, $body);
+            $smtp_client.Send($from, $to, $subject, $body);
         
         }
     }
@@ -75,7 +78,7 @@ foreach ($_server in $servers)
             
         $subject = $_server + ': Exception at ' + $collector_name;
         $body = $exception;                      
-        $smtp.Send($from, $to, $subject, $body);   
+        $smtp_client.Send($from, $to, $subject, $body);   
     }
 }
 #return
@@ -95,7 +98,7 @@ foreach ($_server in $servers)
             $body = $events | format-list -property * | out-string;
             $subject = $_server + ': ' + $collector_name + $log_name;   
             if ($user_interactive -eq $true) {Write-Host -ForegroundColor Yellow $_server 'sending mail...'};     
-            $smtp.Send($from, $to, $subject, $body);
+            $smtp_client.Send($from, $to, $subject, $body);
         }
     }
     catch [Exception] 
@@ -105,6 +108,6 @@ foreach ($_server in $servers)
             
         $subject = $_server + ': Exception at ' + $collector_name;
         $body = $exception;                      
-        $smtp.Send($from, $to, $subject, $body);   
+        $smtp_client.Send($from, $to, $subject, $body);   
     }
 }
