@@ -11,8 +11,13 @@ $config_file = Get-Content  $config_file_full_name | Out-String| ConvertFrom-Jso
 [string]$_server;
 [string]$_service;
 [string]$_item;
-
 #endregion
+
+<#
+
+    test for git
+
+#>
 
 #region <email>
 [string]$use_default_credentials = $config_file.use_default_credentials;
