@@ -3,8 +3,8 @@
 
 
 #region <variables>
-$config_file_full_name = Join-Path $PSScriptRoot 'config.json';
-$config_file = Get-Content  $config_file_full_name | Out-String| ConvertFrom-Json;
+[string]$config_file_full_name = Join-Path $PSScriptRoot 'config.json';
+[PSCustomObject]$config_file = Get-Content  $config_file_full_name | Out-String| ConvertFrom-Json;
 
 
 [bool]$user_interactive = [Environment]::UserInteractive;
@@ -16,7 +16,6 @@ $config_file = Get-Content  $config_file_full_name | Out-String| ConvertFrom-Jso
 #endregion
 
 
-
 #region <email>
 [string]$use_default_credentials = $config_file.use_default_credentials;
 
@@ -25,13 +24,13 @@ if($use_default_credentials -eq $true)
     [string]$user     = $config_file.user;
     [string]$password = $config_file.password;
 
-    $secuered_password = ConvertTo-SecureString $password -AsPlainText -Force;
+    [SecureString]$secuered_password = ConvertTo-SecureString $password -AsPlainText -Force;
     [System.Management.Automation.PSCredential]$credential = New-Object System.Management.Automation.PSCredential ($user, $secuered_password);
 }
 
-[string]$to                = $config_file.to;
-[string]$from              = $config_file.from;
-[string]$smtp_server       = $config_file.smtp_server;
+[string]$to          = $config_file.to;
+[string]$from        = $config_file.from;
+[string]$smtp_server = $config_file.smtp_server;
 
 [Net.Mail.SmtpClient]$smtp_client = New-Object Net.Mail.SmtpClient($smtp_server);
 if($use_default_credentials -eq $true)
@@ -42,9 +41,6 @@ if($use_default_credentials -eq $true)
 [bool]$smtp_client.EnableSsl      = $config_file.ssl;
 [string]$subject;
 #endregion
-
-
-
 
 
 
@@ -95,4 +91,8 @@ foreach ($_server in $servers)
         $smtp_client.Send($from, $to, $subject, $body);   
     }
 
+    $exception = $null;
+    $subject = $null;
+    $body = $null;
+    $message = $null;
 }
