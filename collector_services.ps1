@@ -1,5 +1,7 @@
 ﻿#Set-ExecutionPolicy RemoteSigned
 
+Stop-Service -Name 'SQLSERVERAGENT'
+Stop-Service -Name 'mssqlserver'
 
 #region <variables>
 [string]$config_file_full_name = Join-Path $PSScriptRoot 'config.json';
@@ -11,6 +13,7 @@
 [string]$_server;
 [string]$_service;
 [string]$_item;
+[string]$collector_name = $MyInvocation.MyCommand.Name.Split(".")[0];
 #endregion
 
 
@@ -38,50 +41,78 @@ if($use_default_credentials -eq $true)
 [int32]$smtp_client.Port          = $config_file.port;
 [bool]$smtp_client.EnableSsl      = $config_file.ssl;
 [string]$subject;
+$body
 #endregion
-
-
 
 
 
 foreach ($_server in $servers)
 { 
-    if ($user_interactive -eq $true) {Write-Host -ForegroundColor Cyan $_server };   
-    
-    foreach ($_service in $services)
+    if ($user_interactive -eq $true) {Write-Host -ForegroundColor Cyan $_server };      
+
+    $ScriptBlock =
     {
+        param(
+           $_server = $_server,
+           $_service = $_service,
+           $_item = $_item,
+           $services = $services,
+           $collector_name = $collector_name,
+           $from = $from, 
+           $to = $to,
+           $subject = $subject,
+           $body  = $body,
+           $smtp_client   = $smtp_client
+       )
+      
+        foreach ($_service in $services)
+        {
         try
-        {
-            $_item = Get-Service -Name $_service -ComputerName $_server;
-            #if ($user_interactive -eq $true) {Write-Host $_server $_item.Name $_item.Status -ForegroundColor Cyan};   
-        
-            # Not running
-            # Start the service and send mail
-            if($_item.Status -ne "Running")
             {
-                if ($user_interactive -eq $true) {Write-Host -ForegroundColor Red $_server $_item.Name $_item.Status };       
-                #Start-Service $_item.Name  
+                $_item = Get-Service -Name $_service -ComputerName $_server;                
         
-                $subject = $_server + ": " + $collector_name + " " + $_item.Name + " service status is not Running"; 
-                if ($user_interactive -eq $true) {Write-Host -ForegroundColor Red $_server 'Sending mail...'}; 
-                $smtp_client.Send($from, $to, $subject, $body);
+                # Not running
+                # Start the service and send mail
+                if($_item.Status -ne "Running")
+                {                   
+                   Start-Service $_item.Name          
+                            
+                   $subject = $_server + ": " + $collector_name + " " + $_item.Name + " service status is not Running"; 
+                   $body = $subject;
+                   if ($user_interactive -eq $true) {Write-Host -ForegroundColor Red $_server 'Sending mail...'}; 
+                   $smtp_client.Send($from, $to, $subject, $body);
+                }
+                # Any other status
+                else
+                {
+                    if ($user_interactive -eq $true) {Write-Host -ForegroundColor Yellow $_server $_item.Name $_item.Status };    
+                }     
             }
-            # Any other status
-            else
-            {
-                if ($user_interactive -eq $true) {Write-Host -ForegroundColor Yellow $_server $_item.Name $_item.Status };    
-            }     
-        }
-        catch [Exception] 
-        {
-            $exception = $_.Exception;
-            if ($user_interactive -eq $true) {Write-Host -ForegroundColor Red $exception};      
-            
-            $subject = $_server + ': Exception at ' + $collector_name;
-            $body = $exception;                      
-            $smtp_client.Send($from, $to, $subject, $body);   
-        }
+            catch {throw $_ };
+        }       
     }
+
+
+    $RunspacePool = [runspacefactory]::CreateRunspacePool(1, $MaxThreads);
+    $RunspacePool.Open();
+    $Jobs = @();
+
+    1..$NumRows | Foreach-Object {
+       $PowerShell = [powershell]::Create();
+       $PowerShell.RunspacePool = $RunspacePool;
+       $PowerShell.AddScript($ScriptBlock).AddParameter("_server",$_server).AddParameter("_service",$_service).AddParameter("_item",$_item).AddParameter("services",$services).AddParameter("smtp_client",$smtp_client).AddParameter("from",$from).AddParameter("to",$to).AddParameter("subject",$subject).AddParameter("collector_name",$collector_name).AddParameter("body",$body)
+
+       $Jobs += $PowerShell.BeginInvoke();
+    }    
+    while ($Jobs.IsCompleted -contains $false)
+    {        
+       Start-Sleep -Milliseconds 10;       
+    };
+    $RunspacePool.Close();
+    $RunspacePool.Dispose();
+    
 }
 
 
+
+Get-Service -Name 'SQLSERVERAGENT'#,'mssqlserver'

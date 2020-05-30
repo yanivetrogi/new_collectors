@@ -1,4 +1,5 @@
-﻿# Monitor memory pressure
+﻿# Monitor memory grants pending
+# A return value greater than 0 triggers an alert
 
 
 
@@ -7,23 +8,23 @@
 [PSCustomObject]$config_file = Get-Content  $config_file_full_name | Out-String| ConvertFrom-Json;
 
 [bool]$user_interactive = [Environment]::UserInteractive;
-
-[int]$threshold = $config_file.threshold_memory_pressure_count;
-[int]$minutes = $config_file.threshold_memory_pressure_duration_minutes;
-
+[int]$threshold = $config_file.threshold_tlog_percent_used;
 [string[]]$servers = $config_file.servers;
 [string]$collector_name = $MyInvocation.MyCommand.Name.Split(".")[0];
 [string]$message;
 
 [string]$_server;
-[string]$_query = "SET NOCOUNT ON; EXEC DBA.dbo.MonitorMemoryPressure @minutes = $minutes;";
+[string]$_query = "SET NOCOUNT ON; EXEC DBA.dbo.MonitorMemoryGrantsPending;";
 [string]$_command_type = "DataSet";
 [string]$_database = "DBA";
 
 [array]$array = @();
+[string]$database;
+[long]$file_size_mb = 0;
+[long]$used_size_mb = 0;
+[long]$percent = 0;
 [System.Data.DataSet]$DataSet = New-Object System.Data.DataSet;
 #endregion
-
 
 
 #region <email>
@@ -51,7 +52,6 @@ if($use_default_credentials -eq $true)
 [bool]$smtp_client.EnableSsl      = $config_file.ssl;
 [string]$subject;
 #endregion
-
 
 
 
@@ -103,13 +103,12 @@ foreach ($_server in $servers)
         # Loop over the table
         foreach ($Row in $DataSet.Tables[0].Rows)
         {    
-            $alert_count = $Row.Item('AlertCount');
-            
+            $cntr_value = $Row.Item('cntr_value');
         
-            # If the percent used has crossed the threshold
-            if ($alert_count -gt $threshold)
-            {'['
-                $message = 'The Number of Memory Pressure events: ''' + $alert_count + ''' has crossed the predefined threshold: ''' + $threshold + ''' in the last ' + $minutes + ' minutes';            
+            # Any value grater than 0 is an issue
+            if ($cntr_value -gt 0)
+            {
+                $message = "Memory Grants Pending " + $cntr_value + " has crossed the predefined threshold: 0";                
                 $array += [Environment]::NewLine + $message;           
             }    
         }
@@ -118,13 +117,14 @@ foreach ($_server in $servers)
         {
             $body = $array;
             $subject = $_server + ": " + $collector_name;
+            if ($user_interactive -eq $true) {Write-Host -ForegroundColor Yellow $_server $array };
             if ($user_interactive -eq $true) {Write-Host -ForegroundColor Cyan $_server "Sending mail.." };
             $smtp_client.Send($from, $to, $subject, $body);
-        }
-        if ($user_interactive -eq $true ) {Write-Host -ForegroundColor Yellow $array};      
+        }         
         $array   = $null;        
         $body    = $null;
         $message = $null;        
+    
 
     }
     catch [Exception] 

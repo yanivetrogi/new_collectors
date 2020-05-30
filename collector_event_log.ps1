@@ -1,7 +1,5 @@
-﻿<# 
-    Query event log
-#>
-
+﻿
+if ($psISE) {$path = Split-Path -Path $psISE.CurrentFile.FullPath;} else {$path = $global:PSScriptRoot;}
 
 #region <variables>
 [string]$config_file_full_name = Join-Path $PSScriptRoot 'config.json';

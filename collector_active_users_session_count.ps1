@@ -105,7 +105,7 @@ foreach ($_server in $servers)
             
         if($active_users_session_count -gt $threshold)
         {
-            $message = "active_users_session_count: " + $active_users_session_count + " has crossed the predefined threshold: " + $threshold;            
+            $message = "active_users_session_count: " + $active_users_session_count + " has crossed the predefined threshold: " + $threshold + " in the last " + $minutes + " minutes";            
             $array += [Environment]::NewLine + $message;                           
         }
 

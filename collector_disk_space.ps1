@@ -37,8 +37,8 @@ if($use_default_credentials -eq $true)
 {
     [object]$smtp_client.Credentials  = $credential;
 }
-[int32]$smtp_client.Port          = $config_file.port;
-[bool]$smtp_client.EnableSsl      = $config_file.ssl;
+[int32]$smtp_client.Port     = $config_file.port;
+[bool]$smtp_client.EnableSsl = $config_file.ssl;
 [string]$subject;
 #endregion
 

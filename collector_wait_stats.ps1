@@ -1,29 +1,24 @@
-﻿# Monitor memory pressure
-
-
-
+﻿
 #region <variables>
+
 [string]$config_file_full_name = Join-Path $PSScriptRoot 'config.json';
 [PSCustomObject]$config_file = Get-Content  $config_file_full_name | Out-String| ConvertFrom-Json;
 
 [bool]$user_interactive = [Environment]::UserInteractive;
-
-[int]$threshold = $config_file.threshold_memory_pressure_count;
-[int]$minutes = $config_file.threshold_memory_pressure_duration_minutes;
-
-[string[]]$servers = $config_file.servers;
 [string]$collector_name = $MyInvocation.MyCommand.Name.Split(".")[0];
+
+[int]$threshold = $config_file.threshold_work_queue_count;
+[string[]]$servers = $config_file.servers;
 [string]$message;
 
 [string]$_server;
-[string]$_query = "SET NOCOUNT ON; EXEC DBA.dbo.MonitorMemoryPressure @minutes = $minutes;";
-[string]$_command_type = "DataSet";
+[string]$_query = "SET NOCOUNT ON; EXEC DBA.dbo.CollectWaitStats;"
+[string]$_command_type = "Text";
 [string]$_database = "DBA";
 
 [array]$array = @();
 [System.Data.DataSet]$DataSet = New-Object System.Data.DataSet;
 #endregion
-
 
 
 #region <email>
@@ -98,34 +93,7 @@ foreach ($_server in $servers)
     if ($user_interactive -eq $true) {Write-Host -ForegroundColor Green $_server };
     try
     {   # Execute the stored procedure and get the t-log space used
-        execute_sql_command ($_server)($_database)($_query)($_command_type);
-
-        # Loop over the table
-        foreach ($Row in $DataSet.Tables[0].Rows)
-        {    
-            $alert_count = $Row.Item('AlertCount');
-            
-        
-            # If the percent used has crossed the threshold
-            if ($alert_count -gt $threshold)
-            {'['
-                $message = 'The Number of Memory Pressure events: ''' + $alert_count + ''' has crossed the predefined threshold: ''' + $threshold + ''' in the last ' + $minutes + ' minutes';            
-                $array += [Environment]::NewLine + $message;           
-            }    
-        }
-
-        if($array -ne $null)
-        {
-            $body = $array;
-            $subject = $_server + ": " + $collector_name;
-            if ($user_interactive -eq $true) {Write-Host -ForegroundColor Cyan $_server "Sending mail.." };
-            $smtp_client.Send($from, $to, $subject, $body);
-        }
-        if ($user_interactive -eq $true ) {Write-Host -ForegroundColor Yellow $array};      
-        $array   = $null;        
-        $body    = $null;
-        $message = $null;        
-
+        execute_sql_command ($_server)($_database)($_query)($_command_type);        
     }
     catch [Exception] 
     {
@@ -141,4 +109,5 @@ foreach ($_server in $servers)
     $subject = $null;
     $body = $null;
     $message = $null;
+
 }
