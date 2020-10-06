@@ -22,7 +22,7 @@
 [string]$config_file_full_name = Join-Path $PSScriptRoot 'config.json';
 [PSCustomObject]$config_file = Get-Content  $config_file_full_name | Out-String| ConvertFrom-Json;
 
-[int]$threshold = $config_file.threshold_cpu_usage_percent;
+[int]$threshold = $config_file.threshold_cpu_usage_pecent;
 [string[]]$servers = $config_file.servers;
 [string]$file_full_name;
 [int16]$counter;
@@ -67,7 +67,8 @@ foreach($_server in $servers)
     try
     {
         # Get the Total CPU time
-        $current_value = Get-Counter '\Processor(_Total)\% Processor Time' -ComputerName $_server | select -expand CounterSamples | select CookedValue;
+        #$current_value = Get-Counter '\Processor(_Total)\% Processor Time' -ComputerName $_server | select -expand CounterSamples | select CookedValue;
+        $current_value = Get-Counter '\Processor(_Total)\% Processor Time' | select -expand CounterSamples | select CookedValue;
         if ($user_interactive -eq $true) {Write-Host -ForegroundColor Green $_server ' CPU Usage:' $current_value.CookedValue }#([math]::Round($current_value.CookedValue)) };
 
         $file_name = $_server + '_ProcessorTime.csv';
@@ -89,14 +90,15 @@ foreach($_server in $servers)
         # Loop over the file and find how many times the threshold has been crossed
         foreach($file_value in $file_values)
         {   
-            # Loop over the filoe values while excluding the last value         
+            # Loop over the file values while excluding the last value         
             [int]$file_value_rounded = $file_value.CookedValue;
             if ($file_value_rounded -gt $threshold) 
             {                    
-                $num_times_crossed_threshold +=1;                         
+                $num_times_crossed_threshold += 1;                         
             }                         
             
 
+            # First iteration
             # Add current value as the first element
             # Add the first line of the file that we have read as the second element in the psobject
             if($counter -eq 1)
@@ -104,6 +106,7 @@ foreach($_server in $servers)
                 $psobject = New-Object PSObject -Property @{CookedValue = $current_value.CookedValue;}
                 if ($user_interactive -eq $true) {Write-Host -ForegroundColor Cyan $counter $current_value.CookedValue;}   
                 $array_list += $psobject;    
+
                 $psobject = New-Object PSObject -Property @{CookedValue = $file_value.CookedValue;}
                 if ($user_interactive -eq $true) {Write-Host -ForegroundColor Cyan $counter $file_value.CookedValue;}  
                 $array_list += $psobject;                       
@@ -113,11 +116,12 @@ foreach($_server in $servers)
             {
                 $psobject = New-Object PSObject -Property @{CookedValue = $file_value.CookedValue;}
                 if ($user_interactive -eq $true) {Write-Host -ForegroundColor DarkYellow $counter   $file_value.CookedValue;}  
-                    $array_list += $psobject;   
+                $array_list += $psobject;   
             }
                             
             $counter++          
             # Exit the loop before the last element which is dropped out as a result of the new value being the first element
+            # This way we maintain a fixed number of lines in the file
             if($counter -eq $file_values.Count ) {break};           
         }
         
@@ -137,15 +141,16 @@ foreach($_server in $servers)
         $array_list | Export-Csv $file_full_name -Force;
 
 
-        # Send mail if the threshold has been crossed in the last xx checks
-        if ($send_mail -eq $true)
+        
+        if ($num_times_crossed_threshold -ge $num_samples-1)
         {
-            if ($num_times_crossed_threshold -ge $num_samples-1)
-            {
-                $subject = $_server + ": " + $collector_name;
-                $body = '''Processor(_Total)\% Processor'' Time has crossed the predefined threshold ''' + $threshold + ''' for ''' + $num_samples + ''' consecutive checks';
+            $body = '''Processor(_Total)\% Processor Time'' has crossed the predefined threshold ''' + $threshold + ''' for ''' + $num_samples + ''' consecutive checks';                
+            if ($user_interactive -eq $true) {Write-Host -ForegroundColor Cyan $_server':' $body }; 
 
-                if ($user_interactive -eq $true) {Write-Host -ForegroundColor Cyan $_server 'Sending mail...' }; 
+            # Send mail if the threshold has been crossed in the last xx checks
+            if ($send_mail -eq $true)
+            {
+                $subject = $_server + ': ' + $collector_name;                
                 $smtp_client.Send($from, $to, $subject, $body);
             }
         }

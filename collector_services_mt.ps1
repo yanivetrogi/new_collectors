@@ -1,7 +1,9 @@
 ﻿#Set-ExecutionPolicy RemoteSigned
 
+<#
 Stop-Service -Name 'SQLSERVERAGENT'
 Stop-Service -Name 'mssqlserver'
+#>
 
 #region <variables>
 [string]$config_file_full_name = Join-Path $PSScriptRoot 'config.json';
@@ -112,7 +114,3 @@ foreach ($_server in $servers)
     $RunspacePool.Dispose();
     
 }
-
-
-
-Get-Service -Name 'SQLSERVERAGENT'#,'mssqlserver'

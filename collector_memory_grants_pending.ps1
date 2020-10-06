@@ -2,7 +2,6 @@
 # A return value greater than 0 triggers an alert
 
 
-
 #region <variables>
 [string]$config_file_full_name = Join-Path $PSScriptRoot 'config.json';
 [PSCustomObject]$config_file = Get-Content  $config_file_full_name | Out-String| ConvertFrom-Json;
@@ -25,6 +24,12 @@
 [long]$percent = 0;
 [System.Data.DataSet]$DataSet = New-Object System.Data.DataSet;
 #endregion
+
+
+#$credentials = Get-Credential;
+#$file_name = 'c:\temp\Credentials.txt';
+#$credentials | Export-Clixml -Path $file_name;
+#$file_credentials = Import-Clixml -Path $file_name;
 
 
 #region <email>

@@ -1,20 +1,17 @@
-﻿$ErrorActionPreference = 'Stop';
+﻿
+$ErrorActionPreference = 'Stop';
 
-#if ($psISE) {$path = Split-Path -Path $psISE.CurrentFile.FullPath;} else {$path = $global:PSScriptRoot;}
-
-
-$ErrorActionPreference = 'Stop'
-$path = Get-Location;
+if ($psISE) {$path = Split-Path -Path $psISE.CurrentFile.FullPath;} else {$path = $global:PSScriptRoot;}
 
 try
 {
     $collector_name = $MyInvocation.MyCommand.Name.Split(".")[0];
+    $csv_file_full_name = Join-Path $path $collector_name #+ '.csv'
+    $csv_file_full_name += '.csv';
     
     [string]$config_file_full_name = Join-Path $PSScriptRoot 'config.json';
     [PSCustomObject]$config_file = Get-Content  $config_file_full_name | Out-String| ConvertFrom-Json;
-
-    $processing_path = $config_file.processing_path
-    $ready_path = $config_file.ready_path
+        
     $customername = $config_file.customername    
     $server = get-content env:computername   
     Join-Path $PSScriptRoot 'helpers.ps1'; 
@@ -24,25 +21,34 @@ try
 
        
     $database = 'master'
-    $command_text = 'SET NOCOUNT ON; exec DBA.dbo.MonitorFailedJobsCW @minutes = 10;'
+    $command_text = 'SET NOCOUNT ON; exec DBA.dbo.MonitorFailedJobsCW @minutes = 10000;'
     $command_type = 'DataSet'
     $integrated_security = $true;
     [int]$return_value = 1
 
-    <#
-.Synopsis
-   Executes sql command
-.DESCRIPTION
-   A generic code to execute sql commands
-.EXAMPLE
-   ExecuteScalar
-        $val = Exec-Sql $server $database $command_text $command_type $integrated_security;
-   DataSet        
-        $val = Exec-Sql $server $database $command_text $command_type $integrated_security;
 
-.EXAMPLE
-   Another example of how to use this cmdlet
-#>
+function writemetrictofile($objarr, $name, $out_file)
+{
+    $processing_path = $config_file.processing_path
+    $ready_path = $config_file.ready_path
+    $customername = $config_file.customername
+    $file = $customername +"-" + $name +"-" + $(Get-date -Format yyyyMMdd-HHmmssffff) +'.csv' 
+    $full_path = $processing_path + '\' + $file
+    $hostn = get-content env:computername 
+    
+    $now = Get-Date ([datetime]::UtcNow) -Format s
+    $now = $now.ToString()+"Z"
+    
+    foreach ($obj in $objarr)
+    {    
+        $obj | Add-Member -MemberType NoteProperty -Name FormatedTimestamp -Value $now
+        $obj | Add-Member -MemberType NoteProperty -Name Computer -Value $hostn.trim() -Force;
+    }
+    $objarr | Export-Csv -Path $out_file -NoTypeInformation;
+    #$target_file = $ready_path + '\' + $file
+    #Move-Item $full_path $target_file    
+}
+
 function Exec-Sql
 {
     [CmdletBinding()]
@@ -154,12 +160,12 @@ function Exec-Sql
             Path = ("\\"+ $server +"\" + $collector_name + "_" + $status )
             CookedValue = $return_value
             }
-        $objarr += $obj
+        $objarr += $obj;
     }
 
     # Write to file
-    writemetrictofile ($objarr) ($collector_name)
-}
+    writemetrictofile $objarr $collector_name $csv_file_full_name
+    }
 catch [Exception] {throw;}
 
 #finally 

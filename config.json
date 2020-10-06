@@ -1,25 +1,25 @@
 {
-	"use_default_credentials":"true",
+	"use_default_credentials":"false",
 	"user":"yaniv.etrogi@gmail.com",
-	"password":"Arava97531",	
+	"password":"Arava97531",
     "to":"yaniv.etrogi@gmail.com",
 	"from":"yaniv.etrogi@gmail.com",
 	"smtp_server":"smtp.gmail.com",
 	"port":"25",
 	"ssl":"false",
-	
+	"ready_path":"C:\\CloudMonitoring\\ready",
 	"threshold_faild_jobs_duration_minutes":"15",
 	"threshold_pending_disk_io_count":"2",
 	
 	"threshold_memory_pressure_count":"1",
-	"threshold_memory_pressure_duration_minutes":"5",		
+	"threshold_memory_pressure_duration_minutes":"5",
 	
-	"threshold_active_users_session_count":"100",	
-	"threshold_active_users_session_duration_minutes":"2",	
+	"threshold_active_users_session_count":"100",
+	"threshold_active_users_session_duration_minutes":"2",
 	
 	"threshold_threshold_work_queue_count":"0",	
 	"threshold_tlog_percent_used":"70",
-	"threshold_cpu_usage_pecent":"70",
+	"threshold_cpu_usage_pecent":"30",
 	"threshold_disk_free_space_percent":"5",
 	
 	"eventlog_application_source":"MSSQLSERVER",
@@ -52,7 +52,7 @@
 			,"\\LogicalDisk(*)\\% Free Space"
 			,"\\LogicalDisk(*)\\Free Megabytes"
 			
-			,"\\SQLServer:Memory Manager\\Memory Grants Pending"	
+			,"\\SQLServer:Memory Manager\\Memory Grants Pending"
 			,"\\SQLServer:Memory Manager\\Target Server Memory (KB)"
 			,"\\SQLServer:Memory Manager\\Total Server Memory (KB)"	
 
@@ -66,7 +66,7 @@
 	
 	"servers":
 	[
-		"YANIV"		
+		"YANIV"	
 	],
 	
 	"services":
@@ -74,6 +74,4 @@
 		"MSSQLSERVER",
 		"SQLSERVERAGENT"
 	]
-
-
 }

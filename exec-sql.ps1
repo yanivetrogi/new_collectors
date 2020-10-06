@@ -103,6 +103,7 @@ function Exec-Sql
         }
         catch
         {       
+            if($SqlConnection.State = $SqlConnection.State.
             throw;
         }
     }
