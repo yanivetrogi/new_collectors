@@ -1,7 +1,7 @@
 {
 	"use_default_credentials":"false",
 	"user":"yaniv.etrogi@gmail.com",
-	"password":"Arava97531",
+	"password":"",
     "to":"yaniv.etrogi@gmail.com",
 	"from":"yaniv.etrogi@gmail.com",
 	"smtp_server":"smtp.gmail.com",
