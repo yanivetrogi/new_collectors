@@ -7,12 +7,14 @@
 [bool]$user_interactive = [Environment]::UserInteractive;
 [string]$collector_name = $MyInvocation.MyCommand.Name.Split(".")[0];
 
-[int]$seconds = $config_file.threshold_alwayson_duration_seconds;
+[int]$threshold_full_backup_hours = $config_file.threshold_full_backup_hours;
+[int]$threshold_log_backup_hours = $config_file.threshold_log_backup_hours;
+
 [string[]]$servers = $config_file.servers;
 [string]$message;
 
 [string]$server;
-[string]$query = 'SET NOCOUNT ON; EXEC DBA.dbo.MonitorAlwaysOn @seconds = ' + $seconds + ';'
+[string]$query = 'SET NOCOUNT ON; EXEC DBA.dbo.MonitorMissingBackups @full_backup_threshold_hours = ' + $threshold_full_backup_hours +', @log_backup_threshold_hours = ' + $threshold_log_backup_hours + ';';
 [string]$command_type = 'DataSet';
 [string]$database = 'DBA';
 
@@ -172,27 +174,13 @@ foreach ($server in $servers)
                     
         foreach ($Row in $ds.Tables[0].Rows)
         {            
-            [string]$replica_server_name = $Row.Item('replica_server_name');
-            [string]$availability_group = $Row.Item('name');
-            [string]$database_name = $Row.Item('db');
-            [string]$last_redone_time_ss = $Row.Item('last_redone_time_ss');
-            [string]$last_commit_time_ss = $Row.Item('last_commit_time_ss');
-            [string]$log_send_queue_size = $Row.Item('log_send_queue_size');
-            [string]$redo_queue_size = $Row.Item('redo_queue_size');
-            [string]$secondary_lag_seconds = $Row.Item('secondary_lag_seconds');
-            [string]$is_primary_replica = $Row.Item('is_primary_replica');
-            [string]$synchronization_state_desc = $Row.Item('synchronization_state_desc');
-            [string]$synchronization_health_desc = $Row.Item('synchronization_health_desc');
-            [string]$suspend_reason_desc = $Row.Item('suspend_reason_desc');
-            [string]$database_state_desc = $Row.Item('database_state_desc');            
+            [string]$id = $Row.Item('id');
+            [string]$database_name = $Row.Item('database_name');
+            [string]$type = $Row.Item('type');
 
 
-            $message = 'replica_server_name: ' + $replica_server_name + ' availability_group: ' + $availability_group + ' database_name: ' + $database_name `
-                     + ' last_redone_time_ss: ' + $last_redone_time_ss + ' last_commit_time_ss: ' + $last_commit_time_ss + ' log_send_queue_size: ' + $log_send_queue_size `
-                     + ' redo_queue_size: ' + $redo_queue_size + ' secondary_lag_seconds: ' + $secondary_lag_seconds + ' is_primary_replica: ' + $is_primary_replica `
-                     + ' synchronization_state_desc: ' + $synchronization_state_desc + ' synchronization_health_desc: ' + $synchronization_health_desc + ' suspend_reason_desc: ' + $suspend_reason_desc;
-                     
-            $array += [Environment]::NewLine + $message;                      
+            $message = 'id: ' + $id + ' database_name: ' + $database_name + ' backup_type: ' + $type;                     
+            $array += [Environment]::NewLine + $message;               
         }            
          
 
