@@ -1,30 +1,33 @@
-﻿
+﻿# Monitor AlwaysOn state
+
 #region <variables>
 [string]$config_file_full_name = Join-Path $PSScriptRoot 'config.json';
 [PSCustomObject]$config_file = Get-Content  $config_file_full_name | Out-String| ConvertFrom-Json;
 
+[string]$helpers_file_full_name = Join-Path $PSScriptRoot 'helpers.ps1';
+
 [bool]$user_interactive = [Environment]::UserInteractive;
-[int]$threshold = $config_file.threshold_tlog_percent_used;
-[string[]]$servers = $config_file.servers;
 [string]$collector_name = $MyInvocation.MyCommand.Name.Split(".")[0];
+
+[int]$seconds = $config_file.threshold_alwayson_duration_seconds;
+[string[]]$servers = $config_file.servers;
 [string]$message;
 
 [string]$server;
-[string]$query = "SET NOCOUNT ON; EXEC DBA.dbo.MonitorLogFileSpaceUsed @threshold = 0;";
-[string]$command_type = "DataSet";
-[string]$database = "DBA";
+[string]$query = 'SELECT CAST(FILEPROPERTY(f.name, ''SpaceUsed'') AS int) / 128 spaceused_mb FROM sys.database_files f  WHERE f.type_desc NOT LIKE ''LOG''';;
+[string]$command_type = 'Scalar';
+[string]$database = 'distribution';
 
-[array]$array = @();
-[long]$file_size_mb = 0;
-[long]$used_size_mb = 0;
-[long]$percent = 0;
+#[array]$array = @();
+#[System.Data.DataSet]$DataSet = New-Object System.Data.DataSet;
 
-[string]$graylog_server = $config_file.graylog_server;
-[string]$graylog_port = $config_file.graylog_port;
+$graylog_server = $config_file.graylog_server;
+$graylog_port = $config_file.graylog_port;
 
 $send_mail = $false;
 $send_graylog = $true;
 $send_sms = $false;
+
 #endregion
 
 
@@ -42,20 +45,34 @@ if($use_default_credentials -eq $true)
 
 [string]$to          = $config_file.to;
 [string]$from        = $config_file.from;
-[string]$smtpserver = $config_file.smtpserver;
+[string]$smtp_server = $config_file.smtp_server;
 
-[Net.Mail.SmtpClient]$smtp_client = New-Object Net.Mail.SmtpClient($smtpserver);
+[Net.Mail.SmtpClient]$smtp_client = New-Object Net.Mail.SmtpClient($smtp_server);
 if($use_default_credentials -eq $true)
 {
     [object]$smtp_client.Credentials  = $credential;
 }
 [int32]$smtp_client.Port          = $config_file.port;
-[bool]$smtp_client.EnableSsl      = $config_file.ssl;
+[bool]$smtp_client.EnableSsl      = $false #$config_file.ssl;
 [string]$subject;
 #endregion
 
 
-# Exceute database commands
+#region <sms>
+if ($send_sms -eq $true)
+{
+    #"sms_url":"http://10.32.190.12:4214/publicServices\json\smssender\sms\send",
+    #[string]$sms_url = 'http://10.32.190.12:4214/publicServices\json\smssender\sms\send';
+    [string]$sms_recipients = $config_file.sms_recipients;
+
+    $sms_post_params = @{
+     "pMessage"=$collector_name
+     "pRecipients"=$sms_recipients
+    } | ConvertTo-Json;
+}
+#endregion
+
+
 function Exec-Sql
 {
     [CmdletBinding()]
@@ -157,48 +174,11 @@ foreach ($server in $servers)
 {
     if ($user_interactive -eq $true) {Write-Host -ForegroundColor Green $server };
     try
-    {   
-        $ds = Exec-Sql $server $database $query $command_type $true;
+    {   # Execute the stored procedure 
+        [int] $spaceused_mb = Exec-Sql $server $database $query $command_type $true;               
 
-        # Loop over the table
-        foreach ($Row in $ds.Tables[0].Rows)
-        {
-    
-            $db           = $Row.Item('database').trim();
-            $file_size_mb = $Row.Item('file_size_mb');
-            $used_size_mb = $Row.Item('used_size_mb');
-            $percent      = $Row.Item('percent');
-            if ($user_interactive -eq $true) {Write-Host -ForegroundColor Yellow $server "Database:" $db "file Size mb:" $file_size_mb "used size mb:" $used_size_mb "Percent:" $percent;};   
-        
-
-            # Graylog        
-            if($send_graylog -eq $true) {Send-PSGelfUDP -GelfServer $graylog_server -Port $graylog_port -ShortMessage $collector_name -Facility $server -AdditionalField @{database=$db; file_size_mb=$file_size_mb; used_size_mb=$used_size_mb; percent=$percent} }
-
-            # If the percent used has crossed the threshold
-            if ($percent -gt $threshold)
-            {
-                $message = "Database: " + $db + "  file Size mb: " + $file_size_mb + "  used size mb: " + $used_size_mb + "  Percent: " + $percent + "  has crossed the predefined threshold: " + $threshold;                
-                $array += [Environment]::NewLine + $message;           
-            }    
-        }
-
-        if($array -ne $null)
-        {
-            $body = $array;
-            $subject = $server + ": " + $collector_name;
-            if ($user_interactive -eq $true) {Write-Host -ForegroundColor Yellow $server $array };
-            #if ($user_interactive -eq $true) {Write-Host -ForegroundColor Cyan $server "Sending mail.." };
-            if ($send_mail -eq $true ) {$smtp_client.Send($from, $to, $subject, $body)}; 
-        }
-        
-        $array   = $null;        
-        $body    = $null;
-        $message = $null;    
-        $db = $null;
-        $file_size_mb = $null;
-        $used_size_mb = $null;
-        $percent = $null;
-
+        # Graylog        
+        if($send_graylog -eq $true) {Send-PSGelfUDP -GelfServer $graylog_server -Port $graylog_port -ShortMessage $collector_name -Facility $server -AdditionalField @{spaceused_mb=$spaceused_mb;} }       
     }
     catch [Exception] 
     {
@@ -207,18 +187,16 @@ foreach ($server in $servers)
             
         $subject = $server + ': Exception at ' + $collector_name;
         $body = $exception;                      
-        if ($send_mail -eq $true ) {$smtp_client.Send($from, $to, $subject, $body)};   
+        if ($send_mail -eq $true ) {$smtp_client.Send($from, $to, $subject, $body)};    
+        if ($send_sms -eq $true) {Invoke-WebRequest $sms_url -Method POST -Body $sms_post_params;};  
+
     }
 
     $exception = $null;
-    $subject = $null;
-    $body = $null;
-    $message = $null;
-
-    $array   = $null;            
-    $db = $null;
-    $file_size_mb = $null;
-    $used_size_mb = $null;
-    $percent = $null;
+    #$subject = $null;
+    #$body = $null;
+    #$ds = $null;
+    #$array = $null;
+    #$message = $null;
 
 }

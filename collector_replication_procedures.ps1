@@ -1,5 +1,4 @@
-﻿# Monitor Replication Procedures
-# Vrify that the subscriber has the ins, upd, del procedures
+﻿# Monitor AlwaysOn state
 
 #region <variables>
 [string]$config_file_full_name = Join-Path $PSScriptRoot 'config.json';
@@ -8,22 +7,33 @@
 [bool]$user_interactive = [Environment]::UserInteractive;
 [string]$collector_name = $MyInvocation.MyCommand.Name.Split(".")[0];
 
-[int]$threshold_full_backup_hours = $config_file.threshold_full_backup_hours;
-[int]$threshold_log_backup_hours = $config_file.threshold_log_backup_hours;
+[string]$helpers_file_full_name = Join-Path $PSScriptRoot 'helpers.ps1';
 
-[string[]]$servers = $config_file.subscribers;
+[int]$seconds = $config_file.threshold_alwayson_duration_seconds;
+[string[]]$servers = $config_file.servers;
+
 [string]$message;
-
 [string]$server;
-[string]$command_text = 'SET NOCOUNT ON; SELECT COUNT(*)cnt FROM Zramim.dbo.sysarticles WHERE schema_option = 0x00000000080030F7;';
+[string]$query = 'SELECT COUNT(*) FROM Zramim.dbo.MSreplication_objects;'; # subscribers objects count (replication procedures)
 [string]$command_type = 'Scalar';
 [string]$database = 'DBA';
-[bool]$integrated_security = $true;
 
-[array]$array = @();
-[System.Data.DataSet]$DataSet = New-Object System.Data.DataSet;
+[string]$articles_query = 'SELECT COUNT(*) FROM Zramim.dbo.sysarticles where schema_option = 0x00000000080030F7'; # publisher articles count
+[string]$publisher = $config_file.publisher;
+
+[string[]]$subscribers = $config_file.subscribers;
+
+
+#[array]$array = @();
+#[System.Data.DataSet]$DataSet = New-Object System.Data.DataSet;
+
+$graylog_server = $config_file.graylog_server;
+$graylog_port = $config_file.graylog_port;
+
+$send_mail = $false;
+$send_graylog = $true;
+$send_sms = $true;
 #endregion
-
 
 #region <email>
 [string]$use_default_credentials = $config_file.use_default_credentials;
@@ -51,24 +61,20 @@ if($use_default_credentials -eq $true)
 [string]$subject;
 #endregion
 
+#region <sms>
+if ($send_sms -eq $true)
+{    
+    #[string]$sms_url = 'http://10.32.190.12:4214/publicServices\json\smssender\sms\send';
+    [string]$sms_recipients = $config_file.sms_recipients;
 
-[string]$helpers_file_full_name = Join-Path $PSScriptRoot 'helpers.ps1';
-$helpers_file_full_name;
+    $sms_post_params = @{
+     "pMessage"=$collector_name
+     "pRecipients"=$sms_recipients
+    } | ConvertTo-Json;
+}
+#endregion
 
-<#
-.Synopsis
-   Executes sql command
-.DESCRIPTION
-   A generic code to execute sql commands
-.EXAMPLE
-   ExecuteScalar
-        $val = Exec-Sql $server $database $command_text $command_type $integrated_security;
-   DataSet        
-        $val = Exec-Sql $server $database $command_text $command_type $integrated_security;
 
-.EXAMPLE
-   Another example of how to use this cmdlet
-#>
 function Exec-Sql
 {
     [CmdletBinding()]
@@ -165,66 +171,44 @@ function Exec-Sql
     }
 }
 
-#$server = $null
 
-# Get the articles count at the Center
-[string]$publisher = $env:COMPUTERNAME;
-[int]$articles_count = Exec-Sql $publisher $database $command_text $command_type $integrated_security;
-$articles_count +=1
+# Get the number of tables at the publisher
+[int]$articles_count = Exec-Sql $publisher $database $articles_query $command_type $true;   
 
 
-
-$command_text = 'EXEC DBA.dbo.MonitorReplicationProcedures';
-$command_type = 'DataSet';
-foreach ($server in $servers)
+foreach ($server in $subscribers)
 {
     if ($user_interactive -eq $true) {Write-Host -ForegroundColor Green $server };
     try
-    {   # Execute the stored procedure at the Subcribers        
-        $ds = Exec-Sql $server $database $command_text $command_type $integrated_security;
-                    
-        foreach ($Row in $ds.Tables[0].Rows)
-        {            
-            [int]$cnt = $Row.Item('cnt');
-
-            # Divide the number of procedures by 3 as each table should have 3 replication procedures (insert, update, delete)
-            if($cnt / 3 -ne $articles_count)
-            {
-                $message = 'Server: ' + $server + ' - The number of Replication Procedures: ' + $cnt + ' does not match the execpted number: ' + $articles_count;                     
-                $array += [Environment]::NewLine + $message;  
-            }                         
-        }      
-
-        <#
-        foreach ($Row in $ds.Tables[1].Rows)
-        {            
-            [int]$cnt = $Row.Item('cnt');
-            [string]$arctilce = $Row.Item('arctilce');
-
-            # No rows are execpected to be returned here
-            # Any returned row represenets an article with an incorrect number of replication procedures             
-        }      
-        #>              
-         
-
-        if($array -ne $null)
+    {   
+        [int]$objects_count = Exec-Sql $server $database $query $command_type $true;   
+        
+        # Divide the number of procedures by 3 since we have 3 procdures per table
+        if($objects_count/3 -ne $articles_count)
         {
-            if ($user_interactive -eq $true ) {Write-Host -ForegroundColor Yellow $array};     
+            # failure: return 1
+            # Graylog        
+            if($send_graylog -eq $true) {Send-PSGelfUDP -GelfServer $graylog_server -Port $graylog_port -ShortMessage $collector_name -Facility $server -AdditionalField @{return_status=1;} }            
 
-            $body = $array;
-            $subject = $server + ': ' + $collector_name;            
-            if ($user_interactive -eq $true) {Write-Host -ForegroundColor Cyan $server "Sending mail.." };
-            #$smtp_client.Send($from, $to, $subject, $body);
-        }        
+            # sms
+            if($send_sms -eq $true) {Invoke-WebRequest $sms_url -Method POST -Body $sms_post_params;}; 
+        }   
+        else
+        {
+            # success return 0
+            if($send_graylog -eq $true) {Send-PSGelfUDP -GelfServer $graylog_server -Port $graylog_port -ShortMessage $collector_name -Facility $server -AdditionalField @{return_status=0;} }            
+        }                      
     }
     catch [Exception] 
     {
         $exception = $_.Exception;
+        #$Log.Error($file_name + ':  ' + $exception)
         if ($user_interactive -eq $true) {Write-Host -ForegroundColor Red $exception};      
             
         $subject = $server + ': Exception at ' + $collector_name;
         $body = $exception;                      
-        #$smtp_client.Send($from, $to, $subject, $body);   
+        if ($send_mail -eq $true ) {$smtp_client.Send($from, $to, $subject, $body)};    
+        if ($send_sms -eq $true) {Invoke-WebRequest $sms_url -Method POST -Body $sms_post_params;};
     }
 
     #$exception = $null;

@@ -13,6 +13,15 @@
 [array]$array = @();
 [string]$collector_name = $MyInvocation.MyCommand.Name.Split(".")[0];
 [string]$slack_token = $config_file.slack_token;
+
+$graylog_server = $config_file.graylog_server;
+$graylog_port = $config_file.graylog_port;
+
+$send_mail = $false;
+$send_graylog = $true;
+$send_sms = $false;
+
+
 #endregion
 
 
@@ -30,9 +39,9 @@ if($use_default_credentials -eq $true)
 
 [string]$to          = $config_file.to;
 [string]$from        = $config_file.from;
-[string]$smtp_server = $config_file.smtp_server;
+[string]$smtpserver = $config_file.smtpserver;
 
-[Net.Mail.SmtpClient]$smtp_client = New-Object Net.Mail.SmtpClient($smtp_server);
+[Net.Mail.SmtpClient]$smtp_client = New-Object Net.Mail.SmtpClient($smtpserver);
 if($use_default_credentials -eq $true)
 {
     [object]$smtp_client.Credentials  = $credential;
@@ -44,13 +53,13 @@ if($use_default_credentials -eq $true)
 
 
 
-foreach ($_server in $servers)
+foreach ($server in $servers)
 {   
-    if ($user_interactive -eq $true) {Write-Host -ForegroundColor Cyan $_server};
+    if ($user_interactive -eq $true) {Write-Host -ForegroundColor Cyan $server};
 
     try
     {
-        $disks = get-wmiobject Win32_LogicalDisk -computername $_server -Filter 'DriveType = 3';        
+        $disks = get-wmiobject Win32_LogicalDisk -computername $server -Filter 'DriveType = 3';        
     
         foreach ($disk in $disks) 
         {
@@ -60,23 +69,23 @@ foreach ($_server in $servers)
             [string]$drive = $disk.DeviceID;
 
                    
-            #if ($user_interactive -eq $true) {Write-Host -ForegroundColor Yellow Drive $drive 'size_mb:'$size_mb 'percent_free:'$percent_free };
+            if ($user_interactive -eq $true) {Write-Host -ForegroundColor Yellow Drive $drive 'size_mb:'$size_mb 'percent_free:'$percent_free };
         
             # if we cross the threshold send mail
             if ($percent_free -lt $threshold) 
             {           
                 $message = "Drive " + $drive + " Size mb: " + $size_mb + " Free Space mb: " + $free_space_mb + " Percent Free: " + $percent_free + " crossed the predefined threshold: " + $threshold;            
-                $array += [Environment]::NewLine + $message;   
-            }        
-            
+                $array += [Environment]::NewLine + $message;                   
+            }                    
         }
 
         if($array -ne $null)
         {
             $body = $array;
-            $subject = $_server + ": " + $collector_name;
+            $subject = $server + ": " + $collector_name;
             if ($user_interactive -eq $true) {Write-Host -ForegroundColor Yellow "Sending mail.." };
-            $smtp_client.Send($from, $to, $subject, $body);
+            if ($send_mail -eq $true ) {$smtp_client.Send($from, $to, $subject, $body)};    
+            if ($send_sms -eq $true) {Invoke-WebRequest $sms_url -Method POST -Body $sms_post_params;};
         }
 
         if ($user_interactive -eq $true) {Write-Host $array };    
@@ -86,13 +95,18 @@ foreach ($_server in $servers)
         $exception = $_.Exception;
         if ($user_interactive -eq $true) {Write-Host -ForegroundColor Red $exception};      
             
-        $subject = $_server + ': Exception at ' + $collector_name;
+        $subject = $server + ': Exception at ' + $collector_name;
         $body = $exception;                      
-        $smtp_client.Send($from, $to, $subject, $body);   
+        if ($send_mail -eq $true ) {$smtp_client.Send($from, $to, $subject, $body)};    
+        if ($send_sms -eq $true) {Invoke-WebRequest $sms_url -Method POST -Body $sms_post_params;};
+        Throw;
     }
 
     $exception = $null;
     $subject = $null;
     $body = $null;
     $message = $null;
+    $size_mb = $null
+    $free_space_mb = $null
+    $percent_free = $null
 }

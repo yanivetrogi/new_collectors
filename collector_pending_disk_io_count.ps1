@@ -22,9 +22,6 @@
 [System.Data.DataSet]$DataSet = New-Object System.Data.DataSet;
 #endregion
 
-
-
-
 #region <email>
 [string]$use_default_credentials = $config_file.use_default_credentials;
 
@@ -50,9 +47,6 @@ if($use_default_credentials -eq $true)
 [bool]$smtp_client.EnableSsl      = $config_file.ssl;
 [string]$subject;
 #endregion
-
-
-
 
 
 

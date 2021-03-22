@@ -1,5 +1,4 @@
-﻿# Monitor disk space
-
+﻿# Monitor sql server pending tasks
 
 #region <variables>
 
@@ -19,7 +18,18 @@
 [string]$_database = "DBA";
 
 [array]$array = @();
+#$ArrayList = [System.Collections.ArrayList]@();
+
 [System.Data.DataSet]$DataSet = New-Object System.Data.DataSet;
+
+$graylog_server = $config_file.graylog_server;
+$graylog_port = $config_file.graylog_port;
+
+$send_mail = $false;
+$send_graylog = $true;
+$send_sms = $false;
+
+
 #endregion
 
 
@@ -49,9 +59,19 @@ if($use_default_credentials -eq $true)
 [string]$subject;
 #endregion
 
+#region <sms>
+if ($send_sms -eq $true)
+{
+    #"sms_url":"http://10.32.190.12:4214/publicServices\json\smssender\sms\send",
+    #[string]$sms_url = 'http://10.32.190.12:4214/publicServices\json\smssender\sms\send';
+    [string]$sms_recipients = $config_file.sms_recipients;
 
-
-
+    $sms_post_params = @{
+     "pMessage"=$collector_name
+     "pRecipients"=$sms_recipients
+    } | ConvertTo-Json;
+}
+#endregion
 
 # Exceute database commands
 function execute_sql_command ($_server, $_database, $_query, $_command_type )
@@ -90,6 +110,7 @@ function execute_sql_command ($_server, $_database, $_query, $_command_type )
 }
 
 
+
 foreach ($_server in $servers)
 {
     if ($user_interactive -eq $true) {Write-Host -ForegroundColor Green $_server };
@@ -99,22 +120,31 @@ foreach ($_server in $servers)
                     
         foreach ($Row in $DataSet.Tables[0].Rows)
         {
-            $work_queue_count = $Row.Item('work_queue_count');
-            if ($user_interactive -eq $true) {Write-Host -ForegroundColor Yellow "work_queue_count:" $work_queue_count};   
+            [int]$current_tasks_count = $Row.Item('current_tasks_count');
+            [int]$current_workers_count = $Row.Item('current_workers_count');
+            [int]$active_workers_count = $Row.Item('active_workers_count');
+            [int]$work_queue_count = $Row.Item('work_queue_count');
+            [int]$pending_disk_io_count = $Row.Item('pending_disk_io_count');
         }
+        # Graylog        
+       if($send_graylog -eq $true) {Send-PSGelfUDP -GelfServer $graylog_server -Port $graylog_port -ShortMessage $collector_name -Facility $_server -AdditionalField @{current_tasks_count=$current_tasks_count; current_workers_count=$current_workers_count; active_workers_count=$active_workers_count; work_queue_count=$work_queue_count; pending_disk_io_count=$pending_disk_io_count} }
+
             
         if($work_queue_count -gt $threshold)
         {
             $message = "work_queue_count: " + $work_queue_count + " has crossed the predefined threshold: " + $threshold;            
-            $array += [Environment]::NewLine + $message;                           
+            $array += [Environment]::NewLine + $message;
+            
+            if ($send_sms -eq $true) {Invoke-WebRequest $sms_url -Method POST -Body $sms_post_params;};
         }
-
+        
         if($array -ne $null)
         {
             $body = $array;
             $subject = $_server + ': ' + $collector_name;            
             if ($user_interactive -eq $true) {Write-Host -ForegroundColor Cyan $_server "Sending mail.." };
-            $smtp_client.Send($from, $to, $subject, $body);
+            if ($send_mail -eq $true ) {$smtp_client.Send($from, $to, $subject, $body)};      
+            #sms      
         }
         if ($user_interactive -eq $true ) {Write-Host -ForegroundColor Yellow $array};      
         $array   = $null;        
@@ -127,7 +157,9 @@ foreach ($_server in $servers)
             
         $subject = $_server + ': Exception at ' + $collector_name;
         $body = $exception;                      
-        $smtp_client.Send($from, $to, $subject, $body);   
+        if ($send_mail -eq $true ) {$smtp_client.Send($from, $to, $subject, $body)};   
+        if ($send_sms -eq $true) {Invoke-WebRequest $sms_url -Method POST -Body $sms_post_params;};
+        Throw;
     }
 
     $exception = $null;

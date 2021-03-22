@@ -4,6 +4,8 @@
 [string]$config_file_full_name = Join-Path $PSScriptRoot 'config.json';
 [PSCustomObject]$config_file = Get-Content  $config_file_full_name | Out-String| ConvertFrom-Json;
 
+[string]$helpers_file_full_name = Join-Path $PSScriptRoot 'helpers.ps1';
+
 [bool]$user_interactive = [Environment]::UserInteractive;
 [string]$collector_name = $MyInvocation.MyCommand.Name.Split(".")[0];
 
@@ -18,8 +20,14 @@
 [string]$command_type = 'DataSet';
 [string]$database = 'DBA';
 
-[array]$array = @();
-[System.Data.DataSet]$DataSet = New-Object System.Data.DataSet;
+
+$graylog_server = $config_file.graylog_server;
+$graylog_port = $config_file.graylog_port;
+
+$send_mail = $false;
+$send_graylog = $true;
+$send_sms = $false;
+
 #endregion
 
 
@@ -49,24 +57,21 @@ if($use_default_credentials -eq $true)
 [string]$subject;
 #endregion
 
+#region <sms>
+if ($send_sms -eq $true)
+{
+    #"sms_url":"http://10.32.190.12:4214/publicServices\json\smssender\sms\send",
+    #[string]$sms_url = 'http://10.32.190.12:4214/publicServices\json\smssender\sms\send';
+    [string]$sms_recipients = $config_file.sms_recipients;
 
-[string]$helpers_file_full_name = Join-Path $PSScriptRoot 'helpers.ps1';
-$helpers_file_full_name;
+    $sms_post_params = @{
+     "pMessage"=$collector_name
+     "pRecipients"=$sms_recipients
+    } | ConvertTo-Json;
+}
+#endregion
 
-<#
-.Synopsis
-   Executes sql command
-.DESCRIPTION
-   A generic code to execute sql commands
-.EXAMPLE
-   ExecuteScalar
-        $val = Exec-Sql $server $database $command_text $command_type $integrated_security;
-   DataSet        
-        $val = Exec-Sql $server $database $command_text $command_type $integrated_security;
 
-.EXAMPLE
-   Another example of how to use this cmdlet
-#>
 function Exec-Sql
 {
     [CmdletBinding()]
@@ -170,7 +175,16 @@ foreach ($server in $servers)
     if ($user_interactive -eq $true) {Write-Host -ForegroundColor Green $server };
     try
     {   # Execute the stored procedure 
-        $ds = Exec-Sql $server $database $query $command_type $true;        
+        $ds = Exec-Sql $server $database $query $command_type $true;    
+        
+        # If no rows return then send dummy data in ordedr to allow a "no data" alert on the graylog stream
+        if ($ds.Tables[0].Rows.Count -eq 0)
+        {
+            # Graylog   
+            if($send_graylog -eq $true) {Send-PSGelfUDP -GelfServer $graylog_server -Port $graylog_port -ShortMessage $collector_name -Facility $server -AdditionalField @{database_name='database_name'; type='type'} }
+            return;
+        }
+
                     
         foreach ($Row in $ds.Tables[0].Rows)
         {            
@@ -178,6 +192,8 @@ foreach ($server in $servers)
             [string]$database_name = $Row.Item('database_name');
             [string]$type = $Row.Item('type');
 
+            # Graylog        
+            if($send_graylog -eq $true) {Send-PSGelfUDP -GelfServer $graylog_server -Port $graylog_port -ShortMessage $collector_name -Facility $server -AdditionalField @{database_name=$database_name; type=$type} }
 
             $message = 'id: ' + $id + ' database_name: ' + $database_name + ' backup_type: ' + $type;                     
             $array += [Environment]::NewLine + $message;               
@@ -190,9 +206,12 @@ foreach ($server in $servers)
 
             $body = $array;
             $subject = $server + ': ' + $collector_name;            
-            if ($user_interactive -eq $true) {Write-Host -ForegroundColor Cyan $server "Sending mail.." };
-            $smtp_client.Send($from, $to, $subject, $body);
+            #if ($user_interactive -eq $true) {Write-Host -ForegroundColor Cyan $server "Sending mail.." };
+            if ($send_mail -eq $true ) {$smtp_client.Send($from, $to, $subject, $body);}
+            if ($send_sms -eq $true) {Invoke-WebRequest $sms_url -Method POST -Body $sms_post_params;};  
         }        
+
+        $array = $null;
     }
     catch [Exception] 
     {
@@ -201,7 +220,8 @@ foreach ($server in $servers)
             
         $subject = $server + ': Exception at ' + $collector_name;
         $body = $exception;                      
-        $smtp_client.Send($from, $to, $subject, $body);   
+        if ($send_mail -eq $true ) {$smtp_client.Send($from, $to, $subject, $body)};    
+        if ($send_sms -eq $true) {Invoke-WebRequest $sms_url -Method POST -Body $sms_post_params;};  
     }
 
     #$exception = $null;
